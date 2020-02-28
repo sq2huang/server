@@ -2671,9 +2671,15 @@ int SQL_SELECT::test_quick_select(THD *thd, key_map keys_to_use,
     scan_time= read_time= DBL_MAX;
   else
   {
-    scan_time= (double) records / TIME_FOR_COMPARE + 1;
-    read_time= (double) head->file->scan_time() + scan_time + 1.1;
-    if (limit < records)
+    scan_time= ((double) records) / TIME_FOR_COMPARE;
+    /*
+      The 2 is there to prefer range scans to full table scans.
+      This is mainly to make the test suite happy as many tests has
+      very few rows. In real life tables has more than a few rows and the
+      +2 has no practical effect.
+    */
+    read_time= (double) head->file->scan_time() + scan_time + 2;
+    if (limit < records && read_time < (double) records + scan_time + 1 )
     {
       read_time= (double) records + scan_time + 1; // Force to use index
       notnull_cond= NULL;
@@ -2815,8 +2821,8 @@ int SQL_SELECT::test_quick_select(THD *thd, key_map keys_to_use,
     if (!force_quick_range && !head->covering_keys.is_clear_all())
     {
       int key_for_use= find_shortest_key(head, &head->covering_keys);
-      double key_read_time= head->file->key_scan_time(key_for_use) +
-                            (double) records / TIME_FOR_COMPARE_IDX;
+      double key_read_time= (head->file->key_scan_time(key_for_use) +
+                             (double) records / TIME_FOR_COMPARE);
       DBUG_PRINT("info",  ("'all'+'using index' scan will be using key %d, "
                            "read time %g", key_for_use, key_read_time));
 
@@ -14232,7 +14238,8 @@ void cost_group_min_max(TABLE* table, KEY *index_info, uint used_key_parts,
   DBUG_ENTER("cost_group_min_max");
 
   table_records= table->stat_records();
-  keys_per_block= (uint) (table->file->stats.block_size / 2 /
+  /* Assume block is 75 % full */
+  keys_per_block= (uint) (table->file->stats.block_size * 3 / 4 /
                           (index_info->key_length + table->file->ref_length)
                           + 1);
   num_blocks= (ha_rows)(table_records / keys_per_block) + 1;

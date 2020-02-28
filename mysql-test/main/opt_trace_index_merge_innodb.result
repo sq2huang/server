@@ -88,7 +88,7 @@ explain select * from t1 where pk1 != 0  and key1 = 1	{
                 "range_analysis": {
                   "table_scan": {
                     "rows": 1000,
-                    "cost": 206.1
+                    "cost": 206
                   },
                   "potential_range_indexes": [
                     {
@@ -117,7 +117,7 @@ explain select * from t1 where pk1 != 0  and key1 = 1	{
                         "using_mrr": false,
                         "index_only": false,
                         "rows": 1000,
-                        "cost": 203.39,
+                        "cost": 201.63,
                         "chosen": true
                       },
                       {
@@ -127,7 +127,7 @@ explain select * from t1 where pk1 != 0  and key1 = 1	{
                         "using_mrr": false,
                         "index_only": false,
                         "rows": 1,
-                        "cost": 2.3751,
+                        "cost": 1.3251,
                         "chosen": true
                       }
                     ],
@@ -150,7 +150,7 @@ explain select * from t1 where pk1 != 0  and key1 = 1	{
                         "cause": "cost"
                       },
                       "chosen": false,
-                      "cause": "too few indexes to merge"
+                      "cause": "cost"
                     },
                     "analyzing_index_merge_union": []
                   },
@@ -166,7 +166,7 @@ explain select * from t1 where pk1 != 0  and key1 = 1	{
                       "ranges": ["(1) <= (key1) <= (1)"]
                     },
                     "rows_for_plan": 1,
-                    "cost_for_plan": 2.3751,
+                    "cost_for_plan": 1.3251,
                     "chosen": true
                   }
                 }

@@ -23665,6 +23665,14 @@ skipped_filesort:
   {
     delete save_quick;
     save_quick= NULL;
+
+    /*
+      'delete save_quick' disabled key reads. Enable key read if the new
+      index is an covering key
+    */
+    if (select->quick && !select->head->no_keyread &&
+        select->head->covering_keys.is_set(select->quick->index))
+      select->head->file->ha_start_keyread(select->quick->index);
   }
   if (orig_cond_saved && !changed_key)
     tab->set_cond(orig_cond);
@@ -23679,6 +23687,9 @@ use_filesort:
   {
     delete select->quick;
     select->quick= save_quick;
+    if (select->quick && !select->head->no_keyread &&
+        select->head->covering_keys.is_set(select->quick->index))
+      select->head->file->ha_start_keyread(select->quick->index);
   }
   if (orig_cond_saved)
     tab->set_cond(orig_cond);
@@ -28496,7 +28507,9 @@ test_if_cheaper_ordering(const JOIN_TAB *tab, ORDER *order, TABLE *table,
   *new_select_limit= has_limit ? best_select_limit : table_records;
   if (new_used_key_parts != NULL)
     *new_used_key_parts= best_key_parts;
-
+  table->file->ha_end_keyread();
+  if (is_best_covering && !table->no_keyread)
+    table->file->ha_start_keyread(best_key);
   DBUG_RETURN(TRUE);
 }
 

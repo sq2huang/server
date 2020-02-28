@@ -2818,7 +2818,7 @@ double handler::keyread_time(uint index, uint ranges, ha_rows rows)
   double cost= (double)rows*len/(stats.block_size+1)*IDX_BLOCK_COPY_COST;
   if (ranges)
   {
-    uint keys_per_block= (uint) (stats.block_size/2.0/len+1);
+    uint keys_per_block= (uint) (stats.block_size*3/4/len+1);
     ulonglong blocks= !rows ? 0 : (rows-1) / keys_per_block + 1;
     cost+= blocks;
   }

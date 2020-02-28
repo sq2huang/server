@@ -68,6 +68,8 @@ public:
   { return (double) rows / 20.0+1; }
   double keyread_time(uint index, uint ranges, ha_rows rows)
   { return (double) rows / 20.0+1; }
+  double avg_io_cost()
+  { return 0.05; }                              /* 1/20 */
   int open(const char *name, int mode, uint test_if_locked);
   int close(void);
   void set_keys_for_scanning(void);
