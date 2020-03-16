@@ -580,20 +580,6 @@ error_if_in_trans_or_substatement(THD *thd, int in_substatement_error,
   return false;
 }
 
-bool check_has_super(sys_var *self, THD *thd, set_var *var)
-{
-  DBUG_ASSERT(self->scope() != sys_var::GLOBAL);// don't abuse check_has_super()
-#ifndef NO_EMBEDDED_ACCESS_CHECKS
-  if (!(thd->security_ctx->master_access &
-        PRIV_SET_RESTRICTED_SESSION_SYSTEM_VARIABLE))
-  {
-    my_error(ER_SPECIFIC_ACCESS_DENIED_ERROR, MYF(0), "SUPER");
-    return true;
-  }
-#endif
-  return false;
-}
-
 static Sys_var_bit Sys_core_file("core_file", "write a core-file on crashes",
           READ_ONLY GLOBAL_VAR(test_flags), NO_CMD_LINE,
           TEST_CORE_ON_SIGNAL, DEFAULT(IF_WIN(TRUE,FALSE)), NO_MUTEX_GUARD, NOT_IN_BINLOG,
@@ -601,9 +587,6 @@ static Sys_var_bit Sys_core_file("core_file", "write a core-file on crashes",
 
 static bool binlog_format_check(sys_var *self, THD *thd, set_var *var)
 {
-  if (check_has_super(self, thd, var))
-    return true;
-
   /*
     MariaDB Galera does not support STATEMENT or MIXED binlog format currently.
   */
@@ -674,7 +657,7 @@ static bool fix_binlog_format_after_update(sys_var *self, THD *thd,
   return false;
 }
 
-static Sys_var_enum Sys_binlog_format(
+Sys_var_binlog_format Sys_var_binlog_format::singleton(
        "binlog_format", "What form of binary logging the master will "
        "use: either ROW for row-based binary logging, STATEMENT "
        "for statement-based binary logging, or MIXED. MIXED is statement-"
@@ -689,9 +672,6 @@ static Sys_var_enum Sys_binlog_format(
 
 static bool binlog_direct_check(sys_var *self, THD *thd, set_var *var)
 {
-  if (check_has_super(self, thd, var))
-    return true;
-
   if (var->type == OPT_GLOBAL)
     return false;
 
@@ -703,7 +683,7 @@ static bool binlog_direct_check(sys_var *self, THD *thd, set_var *var)
   return false;
 }
 
-static Sys_var_mybool Sys_binlog_direct(
+Sys_var_binlog_direct Sys_var_binlog_direct::singleton(
        "binlog_direct_non_transactional_updates",
        "Causes updates to non-transactional engines using statement format to "
        "be written directly to binary log. Before using this option make sure "
@@ -995,13 +975,12 @@ static Sys_var_charptr_fscs Sys_datadir(
 static Sys_var_dbug Sys_dbug(
        "debug", "Built-in DBUG debugger", sys_var::SESSION,
        CMD_LINE(OPT_ARG, '#'), DEFAULT(""), NO_MUTEX_GUARD, NOT_IN_BINLOG,
-       ON_CHECK(check_has_super), ON_UPDATE(0),
+       ON_CHECK(0), ON_UPDATE(0),
        DEPRECATED("'@@debug_dbug'")); // since 5.5.37
 
 static Sys_var_dbug Sys_debug_dbug(
        "debug_dbug", "Built-in DBUG debugger", sys_var::SESSION,
-       CMD_LINE(OPT_ARG, '#'), DEFAULT(""), NO_MUTEX_GUARD, NOT_IN_BINLOG,
-       ON_CHECK(check_has_super));
+       CMD_LINE(OPT_ARG, '#'), DEFAULT(""));
 #endif
 
 /**
@@ -1721,19 +1700,16 @@ static Sys_var_ulong Sys_metadata_locks_hash_instances(
        VALID_RANGE(1, 1024), DEFAULT(8),
        BLOCK_SIZE(1));
 
-static Sys_var_ulonglong Sys_pseudo_thread_id(
+Sys_var_pseudo_thread_id Sys_var_pseudo_thread_id::singleton(
        "pseudo_thread_id",
        "This variable is for internal server use",
        SESSION_ONLY(pseudo_thread_id),
        NO_CMD_LINE, VALID_RANGE(0, ULONGLONG_MAX), DEFAULT(0),
-       BLOCK_SIZE(1), NO_MUTEX_GUARD, IN_BINLOG,
-       ON_CHECK(check_has_super));
+       BLOCK_SIZE(1), NO_MUTEX_GUARD, IN_BINLOG);
 
 static bool
 check_gtid_domain_id(sys_var *self, THD *thd, set_var *var)
 {
-  if (check_has_super(self, thd, var))
-    return true;
   if (var->type != OPT_GLOBAL &&
       error_if_in_trans_or_substatement(thd,
           ER_STORED_FUNCTION_PREVENTS_SWITCH_GTID_DOMAIN_ID_SEQ_NO,
@@ -1744,7 +1720,7 @@ check_gtid_domain_id(sys_var *self, THD *thd, set_var *var)
 }
 
 
-static Sys_var_uint Sys_gtid_domain_id(
+Sys_var_gtid_domain_id Sys_var_gtid_domain_id::singleton(
        "gtid_domain_id",
        "Used with global transaction ID to identify logically independent "
        "replication streams. When events can propagate through multiple "
@@ -1762,8 +1738,6 @@ static bool check_gtid_seq_no(sys_var *self, THD *thd, set_var *var)
   uint32 domain_id, server_id;
   uint64 seq_no;
 
-  if (check_has_super(self, thd, var))
-    return true;
   if (unlikely(error_if_in_trans_or_substatement(thd,
                                                  ER_STORED_FUNCTION_PREVENTS_SWITCH_GTID_DOMAIN_ID_SEQ_NO,
                                                  ER_INSIDE_TRANSACTION_PREVENTS_SWITCH_GTID_DOMAIN_ID_SEQ_NO)))
@@ -1781,7 +1755,7 @@ static bool check_gtid_seq_no(sys_var *self, THD *thd, set_var *var)
 }
 
 
-static Sys_var_ulonglong Sys_gtid_seq_no(
+Sys_var_gtid_seq_no Sys_var_gtid_seq_no::singleton(
        "gtid_seq_no",
        "Internal server usage, for replication with global transaction id. "
        "When set, next event group logged to the binary log will use this "
@@ -3155,13 +3129,14 @@ static bool fix_server_id(sys_var *self, THD *thd, enum_var_type type)
   }
   return false;
 }
-static Sys_var_ulong Sys_server_id(
+
+Sys_var_server_id Sys_var_server_id::singleton(
        "server_id",
        "Uniquely identifies the server instance in the community of "
        "replication partners",
        SESSION_VAR(server_id), CMD_LINE(REQUIRED_ARG, OPT_SERVER_ID),
        VALID_RANGE(1, UINT_MAX32), DEFAULT(1), BLOCK_SIZE(1), NO_MUTEX_GUARD,
-       NOT_IN_BINLOG, ON_CHECK(check_has_super), ON_UPDATE(fix_server_id));
+       NOT_IN_BINLOG, ON_CHECK(0), ON_UPDATE(fix_server_id));
 
 static Sys_var_mybool Sys_slave_compressed_protocol(
        "slave_compressed_protocol",
@@ -4063,12 +4038,11 @@ static Sys_var_plugin Sys_default_tmp_storage_engine(
        SESSION_VAR(tmp_table_plugin), NO_CMD_LINE,
        MYSQL_STORAGE_ENGINE_PLUGIN, DEFAULT(&default_tmp_storage_engine));
 
-static Sys_var_plugin Sys_enforce_storage_engine(
+Sys_var_enforce_storage_engine Sys_var_enforce_storage_engine::singleton(
        "enforce_storage_engine", "Force the use of a storage engine for new tables",
        SESSION_VAR(enforced_table_plugin),
        NO_CMD_LINE, MYSQL_STORAGE_ENGINE_PLUGIN,
-       DEFAULT(&enforced_storage_engine), NO_MUTEX_GUARD, NOT_IN_BINLOG,
-       ON_CHECK(check_has_super));
+       DEFAULT(&enforced_storage_engine));
 
 
 #ifdef HAVE_REPLICATION
@@ -4122,10 +4096,10 @@ static Sys_var_pluginlist Sys_gtid_pos_auto_engines(
   The purpose of global actions could be to allow synchronizing with
   connectionless threads that cannot execute SET statements.
 */
+
 static Sys_var_debug_sync Sys_debug_sync(
        "debug_sync", "Debug Sync Facility",
-       NO_SET_STMT sys_var::ONLY_SESSION, NO_CMD_LINE,
-       DEFAULT(0), NO_MUTEX_GUARD, NOT_IN_BINLOG, ON_CHECK(check_has_super));
+       NO_SET_STMT sys_var::ONLY_SESSION, NO_CMD_LINE, DEFAULT(0));
 #endif /* defined(ENABLED_DEBUG_SYNC) */
 
 /**
@@ -4243,13 +4217,12 @@ static Sys_var_bit Sys_big_selects(
        SESSION_VAR(option_bits), NO_CMD_LINE, OPTION_BIG_SELECTS,
        DEFAULT(FALSE));
 
-static Sys_var_bit Sys_log_off(
+Sys_var_sql_log_off Sys_var_sql_log_off::singleton(
        "sql_log_off", "If set to 1 (0 is the default), no logging to the general "
        "query log is done for the client. Only clients with the SUPER privilege "
        "can update this variable.",
        NO_SET_STMT SESSION_VAR(option_bits), NO_CMD_LINE, OPTION_LOG_OFF,
-       DEFAULT(FALSE), NO_MUTEX_GUARD, NOT_IN_BINLOG,
-       ON_CHECK(check_has_super));
+       DEFAULT(FALSE));
 
 /**
   This function sets the session variable thd->variables.sql_log_bin 
@@ -4297,9 +4270,6 @@ static bool check_session_only_variable(sys_var *self, THD *,set_var *var)
 */
 static bool check_sql_log_bin(sys_var *self, THD *thd, set_var *var)
 {
-  if (check_has_super(self, thd, var))
-    return true;
-
   if (check_session_only_variable(self, thd, var))
     return true;
 
@@ -4311,7 +4281,7 @@ static bool check_sql_log_bin(sys_var *self, THD *thd, set_var *var)
   return false;
 }
 
-static Sys_var_mybool Sys_log_binlog(	
+Sys_var_sql_log_bin Sys_var_sql_log_bin::singleton(
        "sql_log_bin", "If set to 0 (1 is the default), no logging to the binary "
        "log is done for the client. Only clients with the SUPER privilege can "
        "update this variable. Can have unintended consequences if set globally, "
@@ -4464,12 +4434,12 @@ static Sys_var_harows Sys_select_limit(
        VALID_RANGE(0, HA_POS_ERROR), DEFAULT(HA_POS_ERROR), BLOCK_SIZE(1));
 
 static const char *secure_timestamp_levels[]= {"NO", "SUPER", "REPLICATION", "YES", 0};
-static bool check_timestamp(sys_var *self, THD *thd, set_var *var)
+bool Sys_var_timestamp::on_check_access_session(THD *thd) const
 {
   if (opt_secure_timestamp == SECTIME_NO)
     return false;
   if (opt_secure_timestamp == SECTIME_SUPER)
-    return check_has_super(self, thd, var);
+    return check_global_access(thd, PRIV_SET_SESSION_VAR_TIMESTAMP_SECTIME_SUPER);
   char buf[1024];
   strxnmov(buf, sizeof(buf), "--secure-timestamp=",
            secure_timestamp_levels[opt_secure_timestamp], NULL);
@@ -4480,7 +4450,7 @@ static Sys_var_timestamp Sys_timestamp(
        "timestamp", "Set the time for this client",
        sys_var::ONLY_SESSION, NO_CMD_LINE,
        VALID_RANGE(0, TIMESTAMP_MAX_VALUE),
-       NO_MUTEX_GUARD, IN_BINLOG, ON_CHECK(check_timestamp));
+       NO_MUTEX_GUARD, IN_BINLOG);
 
 static bool update_last_insert_id(THD *thd, set_var *var)
 {
@@ -5672,7 +5642,7 @@ static Sys_var_mybool Sys_wsrep_sst_donor_rejects_queries(
        GLOBAL_VAR(wsrep_sst_donor_rejects_queries), 
        CMD_LINE(OPT_ARG), DEFAULT(FALSE));
 
-static Sys_var_mybool Sys_wsrep_on (
+Sys_var_wsrep_on Sys_var_wsrep_on::singleton(
        "wsrep_on", "To enable wsrep replication ",
        SESSION_VAR(wsrep_on), 
        CMD_LINE(OPT_ARG), DEFAULT(FALSE),
@@ -6067,13 +6037,12 @@ static Sys_var_set Sys_log_slow_disabled_statements(
        log_slow_disabled_statements_names,
        DEFAULT(LOG_SLOW_DISABLE_SP));
 
-static Sys_var_set Sys_log_disabled_statements(
+Sys_var_log_disabled_statements Sys_var_log_disabled_statements::singleton(
        "log_disabled_statements",
        "Don't log certain types of statements to general log",
        SESSION_VAR(log_disabled_statements), CMD_LINE(REQUIRED_ARG),
        log_disabled_statements_names,
-       DEFAULT(LOG_DISABLE_SP),
-       NO_MUTEX_GUARD, NOT_IN_BINLOG, ON_CHECK(check_has_super));
+       DEFAULT(LOG_DISABLE_SP));
 
 #define NOT_SUPPORTED_YET -2
 #ifndef PCRE2_EXTENDED_MORE

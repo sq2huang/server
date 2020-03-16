@@ -214,6 +214,12 @@ public:
   virtual uchar *default_value_ptr(THD *thd)
   { return (uchar*)&option.def_value; }
 
+  virtual bool on_check_access_global(THD *thd) const;
+  virtual bool on_check_access_session(THD *thd) const
+  {
+    return false;
+  }
+
 private:
   virtual bool do_check(THD *thd, set_var *var) = 0;
   /**
@@ -459,7 +465,6 @@ int sys_var_init();
 uint sys_var_elements();
 int sys_var_add_options(DYNAMIC_ARRAY *long_options, int parse_flags);
 void sys_var_end(void);
-bool check_has_super(sys_var *self, THD *thd, set_var *var);
 plugin_ref *resolve_engine_list(THD *thd, const char *str_arg, size_t str_arg_len,
                                 bool error_on_unknown_engine, bool temp_copy);
 void free_engine_list(plugin_ref *list);

@@ -31,6 +31,7 @@
 #include "tztime.h"     // my_tz_find, my_tz_SYSTEM, struct Time_zone
 #include "rpl_mi.h" // For Multi-Source Replication
 #include "debug_sync.h"
+#include "sql_acl.h"    // check_global_access()
 
 /*
   a set of mostly trivial (as in f(X)=X) defines below to make system variable
@@ -933,6 +934,10 @@ public:
   }
   uchar *default_value_ptr(THD *thd)
   { return (uchar*)""; }
+  bool on_check_access_session(THD *thd) const
+  {
+    return check_global_access(thd, PRIV_SET_SESSION_VAR_DEBUG_DBUG);
+  }
 };
 #endif
 
@@ -1736,6 +1741,10 @@ public:
   }
   uchar *default_value_ptr(THD *thd)
   { return (uchar*)""; }
+  bool on_check_access_session(THD *thd) const
+  {
+    return check_global_access(thd, PRIV_SET_SESSION_VAR_DEBUG_SYNC);
+  }
 };
 #endif /* defined(ENABLED_DEBUG_SYNC) */
 
@@ -1957,6 +1966,7 @@ public:
     thd->sys_var_tmp.double_value= 0;
     return (uchar*) &thd->sys_var_tmp.double_value;
   }
+  bool on_check_access_session(THD *thd) const;
 };
 
 
@@ -2707,4 +2717,128 @@ public:
   { return value_ptr(thd, session_var(thd, vers_asof_timestamp_t)); }
   virtual uchar *global_value_ptr(THD *thd, const LEX_CSTRING *base)
   { return value_ptr(thd, global_var(vers_asof_timestamp_t)); }
+};
+
+
+class Sys_var_binlog_direct: public Sys_var_mybool
+{
+  using Sys_var_mybool::Sys_var_mybool;
+  bool on_check_access_session(THD *thd) const override
+  {
+    return check_global_access(thd,
+                PRIV_SET_SESSION_VAR_BINLOG_DIRECT_NON_TRANSACTIONAL_UPDATES);
+  }
+  static Sys_var_binlog_direct singleton;
+};
+
+
+class Sys_var_sql_log_bin: public Sys_var_mybool
+{
+  using Sys_var_mybool::Sys_var_mybool;
+  bool on_check_access_session(THD *thd) const override
+  {
+    return check_global_access(thd, PRIV_SET_SESSION_VAR_SQL_LOG_BIN);
+  }
+  static Sys_var_sql_log_bin singleton;
+};
+
+
+#ifdef WITH_WSREP
+class Sys_var_wsrep_on: public Sys_var_mybool
+{
+  using Sys_var_mybool::Sys_var_mybool;
+  bool on_check_access_session(THD *thd) const override
+  {
+    return check_global_access(thd, PRIV_SET_SESSION_VAR_WSREP_ON);
+  }
+  static Sys_var_wsrep_on singleton;
+};
+#endif
+
+
+class Sys_var_log_disabled_statements: public Sys_var_set
+{
+  using Sys_var_set::Sys_var_set;
+  bool on_check_access_session(THD *thd) const override
+  {
+    return check_global_access(thd, PRIV_SET_SESSION_VAR_LOG_DISABLED_STATEMENTS);
+  }
+  static Sys_var_log_disabled_statements singleton;
+};
+
+
+class Sys_var_binlog_format: public Sys_var_enum
+{
+  using Sys_var_enum::Sys_var_enum;
+  bool on_check_access_session(THD *thd) const override
+  {
+    return check_global_access(thd, PRIV_SET_SESSION_VAR_BINLOG_FORMAT);
+  }
+  static Sys_var_binlog_format singleton;
+};
+
+
+class Sys_var_gtid_domain_id: public Sys_var_uint
+{
+  using Sys_var_uint::Sys_var_uint;
+  bool on_check_access_session(THD *thd) const override
+  {
+    return check_global_access(thd, PRIV_SET_SESSION_VAR_GTID_DOMAIN_ID);
+  }
+  static Sys_var_gtid_domain_id singleton;
+};
+
+
+class Sys_var_server_id: public Sys_var_ulong
+{
+  using Sys_var_ulong::Sys_var_ulong;
+  bool on_check_access_session(THD *thd) const override
+  {
+    return check_global_access(thd, PRIV_SET_SESSION_VAR_SERVER_ID);
+  }
+  static Sys_var_server_id singleton;
+};
+
+
+class Sys_var_pseudo_thread_id: public Sys_var_ulonglong
+{
+  using Sys_var_ulonglong::Sys_var_ulonglong;
+  bool on_check_access_session(THD *thd) const override
+  {
+    return check_global_access(thd, PRIV_SET_SESSION_VAR_PSEUDO_THREAD_ID);
+  }
+  static Sys_var_pseudo_thread_id singleton;
+};
+
+
+class Sys_var_gtid_seq_no: public Sys_var_ulonglong
+{
+  using Sys_var_ulonglong::Sys_var_ulonglong;
+  bool on_check_access_session(THD *thd) const override
+  {
+    return check_global_access(thd, PRIV_SET_SESSION_VAR_GTID_SEQ_NO);
+  }
+  static Sys_var_gtid_seq_no singleton;
+};
+
+
+class Sys_var_enforce_storage_engine: public Sys_var_plugin
+{
+  using Sys_var_plugin::Sys_var_plugin;
+  bool on_check_access_session(THD *thd) const override
+  {
+    return check_global_access(thd, PRIV_SET_SESSION_VAR_ENFORCE_STORAGE_ENGINE);
+  }
+  static Sys_var_enforce_storage_engine singleton;
+};
+
+
+class Sys_var_sql_log_off: public Sys_var_bit
+{
+  using Sys_var_bit::Sys_var_bit;
+  bool on_check_access_session(THD *thd) const override
+  {
+    return check_global_access(thd, PRIV_SET_SESSION_VAR_SQL_LOG_OFF);
+  }
+  static Sys_var_sql_log_off singleton;
 };
