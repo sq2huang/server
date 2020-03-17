@@ -48,6 +48,12 @@ int unique_write_to_file(uchar* key, element_count count, Unique *unique)
     when tree implementation chooses to store pointer to key in TREE_ELEMENT
     (instead of storing the element itself there)
   */
+  if (unique->is_packed())
+  {
+    // TODO varun also make this same change in the function below
+    return my_b_write(&unique->file, key,
+                      Unique::read_packed_length(key)) ? 1 : 0;
+  }
   return my_b_write(&unique->file, key, unique->size) ? 1 : 0;
 }
 
@@ -79,10 +85,12 @@ int unique_intersect_write_to_ptrs(uchar* key, element_count count, Unique *uniq
 
 Unique::Unique(qsort_cmp2 comp_func, void * comp_func_fixed_arg,
 	       uint size_arg, size_t max_in_memory_size_arg,
-               uint min_dupl_count_arg)
+               uint min_dupl_count_arg, bool packed_arg)
   :max_in_memory_size(max_in_memory_size_arg),
    size(size_arg),
-   elements(0)
+   elements(0),
+   packed(packed_arg),
+   memory_used(0),packed_rec_ptr(NULL)
 {
   my_b_clear(&file);
   min_dupl_count= min_dupl_count_arg;
@@ -90,11 +98,20 @@ Unique::Unique(qsort_cmp2 comp_func, void * comp_func_fixed_arg,
   if (min_dupl_count_arg)
     full_size+= sizeof(element_count);
   with_counters= MY_TEST(min_dupl_count_arg);
-  init_tree(&tree, (max_in_memory_size / 16), 0, size, comp_func,
+  init_tree(&tree, (max_in_memory_size / 16), 0,
+            packed ? 0 : size,
+            comp_func,
             NULL, comp_func_fixed_arg, MYF(MY_THREAD_SPECIFIC));
   /* If the following fail's the next add will also fail */
   my_init_dynamic_array(PSI_INSTRUMENT_ME, &file_ptrs, sizeof(Merge_chunk), 16,
                         16, MYF(MY_THREAD_SPECIFIC));
+
+  if (packed)
+  {
+    packed_rec_ptr= (uchar *)my_malloc(PSI_INSTRUMENT_ME,
+                                       size + size_of_length_field,
+                                       MYF(MY_WME | MY_THREAD_SPECIFIC));
+  }
   /*
     If you change the following, change it in get_max_elements function, too.
   */
@@ -368,6 +385,7 @@ Unique::~Unique()
   close_cached_file(&file);
   delete_tree(&tree, 0);
   delete_dynamic(&file_ptrs);
+  my_free(packed_rec_ptr);
 }
 
 
@@ -386,6 +404,10 @@ bool Unique::flush()
 		(void*) this, left_root_right) ||
       insert_dynamic(&file_ptrs, (uchar*) &file_ptr))
     return 1;
+  /**
+    the tree gets reset so make sure the memory used is reset too
+  */
+  memory_used= 0;
   delete_tree(&tree, 0);
   return 0;
 }
@@ -412,6 +434,8 @@ Unique::reset()
     reinit_io_cache(&file, WRITE_CACHE, 0L, 0, 1);
   }
   my_free(sort.record_pointers);
+  if (packed_rec_ptr)
+    memset(packed_rec_ptr, 0, size);
   elements= 0;
   tree.flag= 0;
   sort.record_pointers= 0;
@@ -492,7 +516,7 @@ static bool merge_walk(uchar *merge_buffer, size_t merge_buffer_size,
                        uint key_length, Merge_chunk *begin, Merge_chunk *end,
                        tree_walk_action walk_action, void *walk_action_arg,
                        qsort_cmp2 compare, void *compare_arg,
-                       IO_CACHE *file, bool with_counters)
+                       IO_CACHE *file, bool with_counters, bool packed= false)
 {
   BUFFPEK_COMPARE_CONTEXT compare_context = { compare, compare_arg };
   QUEUE queue;
@@ -518,7 +542,9 @@ static bool merge_walk(uchar *merge_buffer, size_t merge_buffer_size,
   // read_to_buffer() needs only rec_length.
   Sort_param sort_param;
   sort_param.rec_length= key_length;
+  sort_param.sort_length= key_length;  // added to avoid hitting assert in read_to_buffer
   DBUG_ASSERT(!sort_param.using_addon_fields());
+  sort_param.set_using_packed_keys(packed);
 
   /*
     Invariant: queue must contain top element from each tree, until a tree
@@ -531,7 +557,7 @@ static bool merge_walk(uchar *merge_buffer, size_t merge_buffer_size,
     top->set_buffer(merge_buffer + (top - begin) * piece_size,
                     merge_buffer + (top - begin) * piece_size + piece_size);
     top->set_max_keys(max_key_count_per_piece);
-    bytes_read= read_to_buffer(file, top, &sort_param, false);
+    bytes_read= read_to_buffer(file, top, &sort_param, packed);
     if (unlikely(bytes_read == (ulong) -1))
       goto end;
     DBUG_ASSERT(bytes_read);
@@ -552,16 +578,20 @@ static bool merge_walk(uchar *merge_buffer, size_t merge_buffer_size,
       read next key from the cache or from the file and push it to the
       queue; this gives new top.
     */
-    top->advance_current_key(key_length);
+    uint key_len= packed ?
+                  Unique::read_packed_length((uchar*)old_key) :
+                  key_length;
+
+    top->advance_current_key(key_len);
     top->decrement_mem_count();
     if (top->mem_count())
       queue_replace_top(&queue);
     else /* next piece should be read */
     {
       /* save old_key not to overwrite it in read_to_buffer */
-      memcpy(save_key_buff, old_key, key_length);
+      memcpy(save_key_buff, old_key, key_len);
       old_key= save_key_buff;
-      bytes_read= read_to_buffer(file, top, &sort_param, false);
+      bytes_read= read_to_buffer(file, top, &sort_param, packed);
       if (unlikely(bytes_read == (ulong) -1))
         goto end;
       else if (bytes_read)      /* top->key, top->mem_count are reset */
@@ -606,10 +636,13 @@ static bool merge_walk(uchar *merge_buffer, size_t merge_buffer_size,
            get_counter_from_merged_element(top->current_key(), cnt_ofs) : 1;
       if (walk_action(top->current_key(), cnt, walk_action_arg))
         goto end;
-      top->advance_current_key(key_length);
+      uint key_len= packed ?
+                    Unique::read_packed_length(top->current_key()) :
+                    key_length;
+      top->advance_current_key(key_len);
     }
     while (top->decrement_mem_count());
-    bytes_read= read_to_buffer(file, top, &sort_param, false);
+    bytes_read= read_to_buffer(file, top, &sort_param, packed);
     if (unlikely(bytes_read == (ulong) -1))
       goto end;
   }
@@ -675,7 +708,8 @@ bool Unique::walk(TABLE *table, tree_walk_action action, void *walk_action_arg)
                     (Merge_chunk *) file_ptrs.buffer,
                     (Merge_chunk *) file_ptrs.buffer + file_ptrs.elements,
                     action, walk_action_arg,
-                    tree.compare, tree.custom_arg, &file, with_counters);
+                    tree.compare, tree.custom_arg, &file, with_counters,
+                    is_packed());
   }
   my_free(merge_buffer);
   return res;

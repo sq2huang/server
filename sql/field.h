@@ -1547,6 +1547,8 @@ public:
   virtual uint max_packed_col_length(uint max_length)
   { return max_length;}
   virtual bool is_packable() const { return false; }
+  virtual uint length_size() const { return 0; }
+
 
   uint offset(const uchar *record) const
   {
@@ -2069,7 +2071,6 @@ public:
   bool val_bool() override { return val_real() != 0e0; }
   bool str_needs_quotes() const override { return true; }
   bool eq_cmp_as_binary() override { return MY_TEST(flags & BINARY_FLAG); }
-  virtual uint length_size() const { return 0; }
   double pos_in_interval(Field *min, Field *max) override
   {
     return pos_in_interval_val_str(min, max, length_size());

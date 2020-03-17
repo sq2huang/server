@@ -6408,6 +6408,30 @@ struct SORT_FIELD: public SORT_FIELD_ATTR
 };
 
 
+static void store_key_part_length(uint32 num, uchar *to, uint bytes)
+{
+  switch(bytes) {
+  case 1: *to= (uchar)num;    break;
+  case 2: int2store(to, num); break;
+  case 3: int3store(to, num); break;
+  case 4: int4store(to, num); break;
+  default: DBUG_ASSERT(0);
+  }
+}
+
+
+static uint32 read_keypart_length(const uchar *from, uint bytes)
+{
+  switch(bytes) {
+  case 1: return from[0];
+  case 2: return uint2korr(from);
+  case 3: return uint3korr(from);
+  case 4: return uint4korr(from);
+  default: DBUG_ASSERT(0); return 0;
+  }
+}
+
+
 typedef struct st_sort_buffer {
   uint index;					/* 0 or 1 */
   uint sort_orders;

@@ -3553,6 +3553,74 @@ int group_concat_key_cmp_with_distinct(void* arg, const void* key1,
 
 
 /**
+  Compares the packed values for fields in expr list of GROUP_CONCAT.
+  @note
+
+     GROUP_CONCAT([DISTINCT] expr [,expr ...]
+              [ORDER BY {unsigned_integer | col_name | expr}
+                  [ASC | DESC] [,col_name ...]]
+              [SEPARATOR str_val])
+
+  @return
+  @retval -1 : key1 < key2
+  @retval  0 : key1 = key2
+  @retval  1 : key1 > key2
+*/
+int group_concat_packed_key_cmp_with_distinct(void *arg,
+                                              const void *key1,
+                                              const void *key2)
+{
+  Item_func_group_concat *item_func= (Item_func_group_concat*)arg;
+
+  uchar *key_ptr1= (uchar*)key1;
+  uchar *key_ptr2= (uchar*)key2;
+
+  key_ptr1+= Unique::size_of_length_field;
+  key_ptr2+= Unique::size_of_length_field;
+  uint32 len_key1, len_key2;
+
+  for (uint i= 0; i < item_func->arg_count_field; i++)
+  {
+    Item *item= item_func->args[i];
+    /*
+      If item is a const item then either get_tmp_table_field returns 0
+      or it is an item over a const table.
+    */
+    if (item->const_item())
+      continue;
+    /*
+      We have to use get_tmp_table_field() instead of
+      real_item()->get_tmp_table_field() because we want the field in
+      the temporary table, not the original field
+    */
+    Field *field= item->get_tmp_table_field();
+
+    if (!field)
+      continue;
+
+    uint offset= field->length_size();
+    if (offset)
+    {
+      len_key1= read_keypart_length(key_ptr1, offset);
+      len_key2= read_keypart_length(key_ptr2, offset);
+    }
+    else
+    {
+      len_key1= field->data_length();
+      len_key2= field->data_length();
+    }
+
+    int res= field->cmp((uchar*)key_ptr1, (uchar*)key_ptr2);
+    if (res)
+      return res;
+    key_ptr1+= len_key1 + offset;
+    key_ptr2+= len_key2 + offset;
+  }
+  return 0;
+}
+
+
+/**
   function of sort for syntax: GROUP_CONCAT(expr,... ORDER BY col,... )
 */
 
@@ -3627,6 +3695,11 @@ int dump_leaf_key(void* key_arg, element_count count __attribute__((unused)),
   Item **arg= item->args, **arg_end= item->args + item->arg_count_field;
   uint old_length= result->length();
 
+  bool packed= item->distinct && item->unique_filter->is_packed();
+
+  if (packed)
+    key+= Unique::size_of_length_field;
+
   ulonglong *offset_limit= &item->copy_offset_limit;
   ulonglong *row_limit = &item->copy_row_limit;
   if (item->limit_clause && !(*row_limit))
@@ -3664,10 +3737,18 @@ int dump_leaf_key(void* key_arg, element_count count __attribute__((unused)),
       Field *field= (*arg)->get_tmp_table_field();
       if (field)
       {
-        uint offset= (field->offset(field->table->record[0]) -
-                      table->s->null_bytes);
-        DBUG_ASSERT(offset < table->s->reclength);
-        res= field->val_str(&tmp, key + offset);
+        if (packed)
+        {
+          res= field->val_str(&tmp, key);
+          key+= field->data_length() + field->length_size();
+        }
+        else
+        {
+          uint offset= (field->offset(field->table->record[0]) -
+                       table->s->null_bytes);
+          DBUG_ASSERT(offset < table->s->reclength);
+          res= field->val_str(&tmp, key + offset);
+        }
       }
       else
         res= (*arg)->val_str(&tmp);
@@ -4002,6 +4083,14 @@ bool Item_func_group_concat::add(bool exclude_nulls)
   size_t row_str_len= 0;
   StringBuffer<MAX_FIELD_WIDTH> buf;
   String *res;
+  uint32 packed_length=0;
+  uchar *to= NULL, *orig_to= table->record[0] + table->s->null_bytes;
+  if (distinct && unique_filter->is_packed())
+  {
+    orig_to= to= unique_filter->get_packed_rec_ptr();
+    to+= Unique::size_of_length_field;
+  }
+
   for (uint i= 0; i < arg_count_field; i++)
   {
     Item *show_item= args[i];
@@ -4016,8 +4105,13 @@ bool Item_func_group_concat::add(bool exclude_nulls)
         return 0;                    // Skip row if it contains null
       if (tree && (res= field->val_str(&buf)))
         row_str_len+= res->length();
+      // new code
+      uchar* end= field->pack(to, field->ptr);
+      to+=  static_cast<int>(end - to); 
     }
   }
+  // new code
+  packed_length= static_cast<uint32>(to - orig_to);
 
   null_value= FALSE;
   bool row_eligible= TRUE;
@@ -4025,8 +4119,10 @@ bool Item_func_group_concat::add(bool exclude_nulls)
   if (distinct) 
   {
     /* Filter out duplicate rows. */
+    if (unique_filter->is_packed())
+      Unique::store_packed_length(orig_to, packed_length);
     uint count= unique_filter->elements_in_tree();
-    unique_filter->unique_add(table->record[0] + table->s->null_bytes);
+    unique_filter->unique_add(orig_to, packed_length);
     if (count == unique_filter->elements_in_tree())
       row_eligible= FALSE;
   }
@@ -4254,11 +4350,14 @@ bool Item_func_group_concat::setup(THD *thd)
     tree_len= 0;
   }
 
+  /*
+    TODO varun: change then function in accordance to packing being used or not
+  */
   if (distinct)
-    unique_filter= new Unique(group_concat_key_cmp_with_distinct,
+    unique_filter= new Unique(group_concat_packed_key_cmp_with_distinct,
                               (void*)this,
                               tree_key_length,
-                              ram_limitation(thd));
+                              ram_limitation(thd), 0, TRUE);
   if ((row_limit && row_limit->cmp_type() != INT_RESULT) ||
       (offset_limit && offset_limit->cmp_type() != INT_RESULT))
   {

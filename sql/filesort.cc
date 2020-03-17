@@ -68,29 +68,6 @@ static bool check_if_pq_applicable(Sort_param *param, SORT_INFO *info,
                                    TABLE *table,
                                    ha_rows records, size_t memory_available);
 
-static void store_key_part_length(uint32 num, uchar *to, uint bytes)
-{
-  switch(bytes) {
-  case 1: *to= (uchar)num;    break;
-  case 2: int2store(to, num); break;
-  case 3: int3store(to, num); break;
-  case 4: int4store(to, num); break;
-  default: DBUG_ASSERT(0);
-  }
-}
-
-
-static uint32 read_keypart_length(const uchar *from, uint bytes)
-{
-  switch(bytes) {
-  case 1: return from[0];
-  case 2: return uint2korr(from);
-  case 3: return uint3korr(from);
-  case 4: return uint4korr(from);
-  default: DBUG_ASSERT(0); return 0;
-  }
-}
-
 
 // @param sortlen  [Maximum] length of the sort key
 void Sort_param::init_for_filesort(uint sortlen, TABLE *table,
@@ -1721,7 +1698,8 @@ ulong read_to_buffer(IO_CACHE *fromfile, Merge_chunk *buffpek,
         uint res_length= param->get_result_length(plen);
         if (plen + res_length > buffpek->buffer_end())
           break;                                // Incomplete record.
-        DBUG_ASSERT(res_length > 0);
+        DBUG_ASSERT((param->sort_keys == NULL && res_length == 0)||
+                     res_length > 0);
         DBUG_ASSERT(sort_length + res_length <= param->rec_length);
         record+= sort_length;
         record+= res_length;
