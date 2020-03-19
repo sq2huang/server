@@ -845,3 +845,43 @@ err:
   my_free(sort_buffer);  
   DBUG_RETURN(rc);
 }
+
+
+bool Unique::setup(THD *thd, Item *item, uint count)
+{
+  if (!packed)   // no packing so don't create the sortorder list
+    return false;
+  SORT_FIELD *sort,*pos;
+  if (sortorder)
+    return false;
+  DBUG_ASSERT(sort_keys == NULL);
+  sortorder= (SORT_FIELD*) thd->alloc(sizeof(SORT_FIELD) * count);
+  pos= sort= sortorder;
+  if (!pos)
+    return true;
+  sort_keys= new Sort_keys(sortorder, count);
+  if (!sort_keys)
+    return true;
+  sort=pos= sortorder;
+  for (uint i= 0; i < item->cols(); i++)
+  {
+    Item *arg= item->element_index(i);
+    if (arg->const_item())
+      continue;
+    Field *field= item->get_tmp_table_field();
+    if (!field)
+      continue;
+    pos->field= field;
+    pos->reverse= ORDER::ORDER_DESC;
+    pos->original_length= pos->length= field->sort_length();
+    pos->cs= field->sort_charset();
+    pos->suffix_length= field->sort_suffix_length();
+    pos->type= field->is_packable() ?
+               SORT_FIELD_ATTR::VARIABLE_SIZE :
+               SORT_FIELD_ATTR::FIXED_SIZE;
+    if (pos->is_variable_sized())
+      pos->length_bytes= number_storage_requirement(pos->length);
+    pos++;
+  }
+  return false;
+}

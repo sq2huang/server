@@ -55,6 +55,8 @@ class Unique :public Sql_alloc
     the unique object
   */
   uchar* packed_rec_ptr;
+  SORT_FIELD *sortorder;
+  Sort_keys *sort_keys;
 
   bool merge(TABLE *table, uchar *buff, size_t size, bool without_last_merge);
   bool flush();
@@ -137,6 +139,8 @@ public:
   uint get_size() const { return size; }
   size_t get_max_in_memory_size() const { return max_in_memory_size; }
   uchar *get_packed_rec_ptr() { return packed_rec_ptr; }
+  bool setup(THD *thd, Item *item, uint count);
+  Sort_keys *get_keys() { return sort_keys; }
 
   friend int unique_write_to_file(uchar* key, element_count count, Unique *unique);
   friend int unique_write_to_ptrs(uchar* key, element_count count, Unique *unique);

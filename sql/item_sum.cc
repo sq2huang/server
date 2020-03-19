@@ -34,6 +34,7 @@
 #include "sp.h"
 #include "sql_parse.h"
 #include "sp_head.h"
+#include "sql_sort.h"
 
 /**
   Calculate the affordable RAM limit for structures like TREE or Unique
@@ -3567,54 +3568,33 @@ int group_concat_key_cmp_with_distinct(void* arg, const void* key1,
   @retval  1 : key1 > key2
 */
 int group_concat_packed_key_cmp_with_distinct(void *arg,
-                                              const void *key1,
-                                              const void *key2)
+                                              const void *a_ptr,
+                                              const void *b_ptr)
 {
   Item_func_group_concat *item_func= (Item_func_group_concat*)arg;
 
-  uchar *key_ptr1= (uchar*)key1;
-  uchar *key_ptr2= (uchar*)key2;
+  DBUG_ASSERT(item_func->unique_filter);
+  int retval= 0;
+  size_t a_len, b_len;
+  uchar *a= (uchar*)a_ptr;
+  uchar *b= (uchar*)b_ptr;
 
-  key_ptr1+= Unique::size_of_length_field;
-  key_ptr2+= Unique::size_of_length_field;
-  uint32 len_key1, len_key2;
+  a+= Unique::size_of_length_field;
+  b+= Unique::size_of_length_field;
+  Sort_keys *sort_keys= item_func->unique_filter->get_keys();
 
-  for (uint i= 0; i < item_func->arg_count_field; i++)
+  for (SORT_FIELD *sort_field= sort_keys->begin();
+       sort_field != sort_keys->end(); sort_field++)
   {
-    Item *item= item_func->args[i];
-    /*
-      If item is a const item then either get_tmp_table_field returns 0
-      or it is an item over a const table.
-    */
-    if (item->const_item())
-      continue;
-    /*
-      We have to use get_tmp_table_field() instead of
-      real_item()->get_tmp_table_field() because we want the field in
-      the temporary table, not the original field
-    */
-    Field *field= item->get_tmp_table_field();
+    retval= sort_field->is_variable_sized() ?
+            sort_field->compare_packed_varstrings(a, &a_len, b, &b_len) :
+            sort_field->compare_packed_fixed_size_vals(a, &a_len, b, &b_len);
 
-    if (!field)
-      continue;
+    if (retval)
+      return sort_field->reverse ? -retval : retval;
 
-    uint offset= field->length_size();
-    if (offset)
-    {
-      len_key1= read_keypart_length(key_ptr1, offset);
-      len_key2= read_keypart_length(key_ptr2, offset);
-    }
-    else
-    {
-      len_key1= field->data_length();
-      len_key2= field->data_length();
-    }
-
-    int res= field->cmp((uchar*)key_ptr1, (uchar*)key_ptr2);
-    if (res)
-      return res;
-    key_ptr1+= len_key1 + offset;
-    key_ptr2+= len_key2 + offset;
+    a+= a_len;
+    b+= b_len;
   }
   return 0;
 }
