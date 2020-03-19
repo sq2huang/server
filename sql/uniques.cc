@@ -48,18 +48,14 @@ int unique_write_to_file(uchar* key, element_count count, Unique *unique)
     when tree implementation chooses to store pointer to key in TREE_ELEMENT
     (instead of storing the element itself there)
   */
-  if (unique->is_packed())
-  {
-    // TODO varun also make this same change in the function below
-    return my_b_write(&unique->file, key,
-                      Unique::read_packed_length(key)) ? 1 : 0;
-  }
-  return my_b_write(&unique->file, key, unique->size) ? 1 : 0;
+  return (unique->is_packed() ?
+          my_b_write(&unique->file, key, Unique::read_packed_length(key)) :
+          my_b_write(&unique->file, key, unique->size)) ? 1 : 0;
 }
 
 int unique_write_to_file_with_count(uchar* key, element_count count, Unique *unique)
 {
-  return my_b_write(&unique->file, key, unique->size) ||
+  return unique_write_to_file(key, count, unique) ||
          my_b_write(&unique->file, (uchar*)&count, sizeof(element_count)) ? 1 : 0;
 }
 
