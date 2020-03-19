@@ -35,6 +35,7 @@
 #include "filesort_utils.h"
 #include "sql_select.h"
 #include "debug_sync.h"
+#include "uniques.h"
 
 	/* functions defined in this file */
 
@@ -1855,11 +1856,15 @@ bool merge_buffers(Sort_param *param, IO_CACHE *from_file,
        Store it also in 'to_file'.
     */
     buffpek= (Merge_chunk*) queue_top(&queue);
-    memcpy(unique_buff, buffpek->current_key(), rec_length);
+    uint rec_len= using_packed_sortkeys ?
+                  Unique::read_packed_length(buffpek->current_key()) :
+                  rec_length;
+
+    memcpy(unique_buff, buffpek->current_key(), rec_len);
     if (min_dupl_count)
       memcpy(&dupl_count, unique_buff+dupl_count_ofs, 
              sizeof(dupl_count));
-    buffpek->advance_current_key(rec_length);
+    buffpek->advance_current_key(rec_len);
     buffpek->decrement_mem_count();
     if (buffpek->mem_count() == 0)
     {
@@ -1867,7 +1872,7 @@ bool merge_buffers(Sort_param *param, IO_CACHE *from_file,
                                                 param, packed_format))))
       {
         (void) queue_remove_top(&queue);
-        reuse_freed_buff(&queue, buffpek, rec_length);
+        reuse_freed_buff(&queue, buffpek, rec_len);
       }
       else if (unlikely(bytes_read == (ulong) -1))
         goto err;                        /* purecov: inspected */ 
