@@ -139,8 +139,9 @@ public:
   uint get_size() const { return size; }
   size_t get_max_in_memory_size() const { return max_in_memory_size; }
   uchar *get_packed_rec_ptr() { return packed_rec_ptr; }
-  bool setup(THD *thd, Item *item, uint count);
+  bool setup(THD *thd, Item_sum *item, uint non_const_args, uint arg_count);
   Sort_keys *get_keys() { return sort_keys; }
+  SORT_FIELD *get_sortorder() { return sortorder; }
 
   friend int unique_write_to_file(uchar* key, element_count count, Unique *unique);
   friend int unique_write_to_ptrs(uchar* key, element_count count, Unique *unique);

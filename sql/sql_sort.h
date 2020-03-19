@@ -659,6 +659,10 @@ public:
   {
     return m_packed_format;
   }
+  void set_packed_format(bool val)
+  {
+    m_packed_format= val;
+  }
 
 private:
   uint m_packable_length;

@@ -3674,11 +3674,15 @@ int dump_leaf_key(void* key_arg, element_count count __attribute__((unused)),
   String *result= &item->result;
   Item **arg= item->args, **arg_end= item->args + item->arg_count_field;
   uint old_length= result->length();
+  SORT_FIELD *pos;
 
   bool packed= item->distinct && item->unique_filter->is_packed();
 
   if (packed)
+  {
+    pos= item->unique_filter->get_sortorder();
     key+= Unique::size_of_length_field;
+  }
 
   ulonglong *offset_limit= &item->copy_offset_limit;
   ulonglong *row_limit = &item->copy_row_limit;
@@ -3719,8 +3723,10 @@ int dump_leaf_key(void* key_arg, element_count count __attribute__((unused)),
       {
         if (packed)
         {
+          DBUG_ASSERT(pos->field == field);
           res= field->val_str(&tmp, key);
-          key+= field->data_length() + field->length_size();
+          key+= res->length() + pos->length_bytes;
+          pos++;
         }
         else
         {
@@ -4218,6 +4224,7 @@ bool Item_func_group_concat::setup(THD *thd)
 
   /* Push all not constant fields to the list and create a temp table */
   always_null= 0;
+  uint non_const_items= 0;
   for (uint i= 0; i < arg_count_field; i++)
   {
     Item *item= args[i];
@@ -4231,6 +4238,8 @@ bool Item_func_group_concat::setup(THD *thd)
         DBUG_RETURN(FALSE);
       }
     }
+    else
+      non_const_items++;
   }
 
   List<Item> all_fields(list);
@@ -4334,10 +4343,15 @@ bool Item_func_group_concat::setup(THD *thd)
     TODO varun: change then function in accordance to packing being used or not
   */
   if (distinct)
+  {
     unique_filter= new Unique(group_concat_packed_key_cmp_with_distinct,
                               (void*)this,
                               tree_key_length,
                               ram_limitation(thd), 0, TRUE);
+    if (!unique_filter || unique_filter->setup(thd, this, non_const_items,
+                                               arg_count_field))
+      DBUG_RETURN(TRUE);
+  }
   if ((row_limit && row_limit->cmp_type() != INT_RESULT) ||
       (offset_limit && offset_limit->cmp_type() != INT_RESULT))
   {

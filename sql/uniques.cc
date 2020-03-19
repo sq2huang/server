@@ -86,7 +86,8 @@ Unique::Unique(qsort_cmp2 comp_func, void * comp_func_fixed_arg,
    size(size_arg),
    elements(0),
    packed(packed_arg),
-   memory_used(0),packed_rec_ptr(NULL)
+   memory_used(0), packed_rec_ptr(NULL),
+   sortorder(NULL), sort_keys(NULL)
 {
   my_b_clear(&file);
   min_dupl_count= min_dupl_count_arg;
@@ -757,6 +758,8 @@ bool Unique::merge(TABLE *table, uchar *buff, size_t buff_size,
   sort_param.max_keys_per_buffer=
     (uint) MY_MAX((max_in_memory_size / sort_param.sort_length), MERGEBUFF2);
   sort_param.not_killable= 1;
+  sort_param.set_using_packed_keys(is_packed());
+  sort_param.set_packed_format(is_packed());
 
   sort_param.unique_buff= buff +(sort_param.max_keys_per_buffer *
 				       sort_param.sort_length);
@@ -847,7 +850,8 @@ err:
 }
 
 
-bool Unique::setup(THD *thd, Item *item, uint count)
+bool
+Unique::setup(THD *thd, Item_sum *item, uint non_const_args, uint arg_count)
 {
   if (!packed)   // no packing so don't create the sortorder list
     return false;
@@ -855,30 +859,31 @@ bool Unique::setup(THD *thd, Item *item, uint count)
   if (sortorder)
     return false;
   DBUG_ASSERT(sort_keys == NULL);
-  sortorder= (SORT_FIELD*) thd->alloc(sizeof(SORT_FIELD) * count);
+  sortorder= (SORT_FIELD*) thd->alloc(sizeof(SORT_FIELD) * non_const_args);
   pos= sort= sortorder;
   if (!pos)
     return true;
-  sort_keys= new Sort_keys(sortorder, count);
+  sort_keys= new Sort_keys(sortorder, non_const_args);
   if (!sort_keys)
     return true;
   sort=pos= sortorder;
-  for (uint i= 0; i < item->cols(); i++)
+  for (uint i= 0; i < arg_count; i++)
   {
-    Item *arg= item->element_index(i);
+    Item *arg= item->get_arg(i);
     if (arg->const_item())
       continue;
-    Field *field= item->get_tmp_table_field();
+    Field *field= arg->get_tmp_table_field();
     if (!field)
       continue;
     pos->field= field;
-    pos->reverse= ORDER::ORDER_DESC;
+    pos->reverse= false;
     pos->original_length= pos->length= field->sort_length();
     pos->cs= field->sort_charset();
     pos->suffix_length= field->sort_suffix_length();
     pos->type= field->is_packable() ?
                SORT_FIELD_ATTR::VARIABLE_SIZE :
                SORT_FIELD_ATTR::FIXED_SIZE;
+    pos->maybe_null= false;
     if (pos->is_variable_sized())
       pos->length_bytes= number_storage_requirement(pos->length);
     pos++;
