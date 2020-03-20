@@ -137,6 +137,7 @@ public:
   bool walk(TABLE *table, tree_walk_action action, void *walk_action_arg);
 
   uint get_size() const { return size; }
+  uint get_full_size() const { return full_size; }
   size_t get_max_in_memory_size() const { return max_in_memory_size; }
   uchar *get_packed_rec_ptr() { return packed_rec_ptr; }
   bool setup(THD *thd, Item_sum *item, uint non_const_args, uint arg_count);

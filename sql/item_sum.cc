@@ -3670,7 +3670,8 @@ int dump_leaf_key(void* key_arg, element_count count __attribute__((unused)),
   String tmp((char *)table->record[1], table->s->reclength,
              default_charset_info);
   String tmp2;
-  uchar *key= (uchar *) key_arg;
+  const uchar *key= (const uchar *) key_arg;
+  const uchar *key_end= NULL;
   String *result= &item->result;
   Item **arg= item->args, **arg_end= item->args + item->arg_count_field;
   uint old_length= result->length();
@@ -3682,6 +3683,7 @@ int dump_leaf_key(void* key_arg, element_count count __attribute__((unused)),
   {
     pos= item->unique_filter->get_sortorder();
     key+= Unique::size_of_length_field;
+    key_end= key + item->unique_filter->get_full_size();
   }
 
   ulonglong *offset_limit= &item->copy_offset_limit;
@@ -3724,8 +3726,8 @@ int dump_leaf_key(void* key_arg, element_count count __attribute__((unused)),
         if (packed)
         {
           DBUG_ASSERT(pos->field == field);
-          res= field->val_str(&tmp, key);
-          key+= res->length() + pos->length_bytes;
+          key= field->unpack(field->ptr, key, key_end, 0);
+          res= field->val_str(&tmp, &tmp);
           pos++;
         }
         else
@@ -4092,12 +4094,13 @@ bool Item_func_group_concat::add(bool exclude_nulls)
       if (tree && (res= field->val_str(&buf)))
         row_str_len+= res->length();
       // new code
-      uchar* end= field->pack(to, field->ptr);
-      to+=  static_cast<int>(end - to); 
+      if (is_distinct_packed())
+      {
+        uchar* end= field->pack(to, field->ptr);
+        to+=  static_cast<int>(end - to);
+      }
     }
   }
-  // new code
-  packed_length= static_cast<uint32>(to - orig_to);
 
   null_value= FALSE;
   bool row_eligible= TRUE;
@@ -4106,7 +4109,10 @@ bool Item_func_group_concat::add(bool exclude_nulls)
   {
     /* Filter out duplicate rows. */
     if (unique_filter->is_packed())
+    {
+      packed_length= static_cast<uint32>(to - orig_to);
       Unique::store_packed_length(orig_to, packed_length);
+    }
     uint count= unique_filter->elements_in_tree();
     unique_filter->unique_add(orig_to, packed_length);
     if (count == unique_filter->elements_in_tree())
@@ -4237,6 +4243,7 @@ bool Item_func_group_concat::setup(THD *thd)
         always_null= 1;
         DBUG_RETURN(FALSE);
       }
+      continue;
     }
     else
       non_const_items++;
@@ -4309,6 +4316,17 @@ bool Item_func_group_concat::setup(THD *thd)
   table->file->extra(HA_EXTRA_NO_ROWS);
   table->no_rows= 1;
 
+  bool allow_packing= true;
+  for (uint i= 0; i < arg_count_field; i++)
+  {
+    Item *item= args[i];
+    if (item->const_item())
+      continue;
+    Field *field= item->get_tmp_table_field();
+    if (field && field->flags & BLOB_FLAG)
+      allow_packing= false;
+  }
+
   /**
     Initialize blob_storage if GROUP_CONCAT is used
     with ORDER BY | DISTINCT and BLOB field count > 0.    
@@ -4339,15 +4357,24 @@ bool Item_func_group_concat::setup(THD *thd)
     tree_len= 0;
   }
 
-  /*
-    TODO varun: change then function in accordance to packing being used or not
-  */
   if (distinct)
   {
-    unique_filter= new Unique(group_concat_packed_key_cmp_with_distinct,
-                              (void*)this,
-                              tree_key_length,
-                              ram_limitation(thd), 0, TRUE);
+    // TODO varun: handle packing properly here
+    if (allow_packing)
+    {
+      unique_filter= new Unique(group_concat_packed_key_cmp_with_distinct,
+                                (void*)this,
+                                tree_key_length + Unique::size_of_length_field,
+                                ram_limitation(thd), 0, true);
+    }
+    else
+    {
+      unique_filter= new Unique(group_concat_key_cmp_with_distinct,
+                                (void*)this,
+                                tree_key_length,
+                                ram_limitation(thd), 0, false);
+
+    }
     if (!unique_filter || unique_filter->setup(thd, this, non_const_items,
                                                arg_count_field))
       DBUG_RETURN(TRUE);
@@ -4401,6 +4428,12 @@ String* Item_func_group_concat::val_str(String* str)
   }
 
   return &result;
+}
+
+
+bool Item_func_group_concat::is_distinct_packed()
+{
+  return unique_filter && unique_filter->is_packed();
 }
 
 

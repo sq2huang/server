@@ -1862,7 +1862,7 @@ bool merge_buffers(Sort_param *param, IO_CACHE *from_file,
 
     memcpy(unique_buff, buffpek->current_key(), rec_len);
     if (min_dupl_count)
-      memcpy(&dupl_count, unique_buff+dupl_count_ofs, 
+      memcpy(&dupl_count, unique_buff + rec_len - sizeof(element_count),
              sizeof(dupl_count));
     buffpek->advance_current_key(rec_len);
     buffpek->decrement_mem_count();
@@ -1894,19 +1894,23 @@ bool merge_buffers(Sort_param *param, IO_CACHE *from_file,
       if (cmp)                                        // Remove duplicates
       {
         uchar *current_key= buffpek->current_key();
+        uint rec_len= using_packed_sortkeys ?
+                      Unique::read_packed_length(buffpek->current_key()) :
+                      rec_length;
         if (!(*cmp)(first_cmp_arg, &unique_buff, &current_key))
         {
           if (min_dupl_count)
           {
             element_count cnt;
-            memcpy(&cnt, buffpek->current_key() + dupl_count_ofs, sizeof(cnt));
+            memcpy(&cnt, buffpek->current_key() +
+                   rec_len - sizeof(element_count), sizeof(cnt));
             dupl_count+= cnt;
           }
           goto skip_duplicate;
         }
         if (min_dupl_count)
         {
-          memcpy(unique_buff+dupl_count_ofs, &dupl_count,
+          memcpy(unique_buff + rec_len - sizeof(element_count), &dupl_count,
                  sizeof(dupl_count));
         }
         src= unique_buff;
@@ -1938,7 +1942,8 @@ bool merge_buffers(Sort_param *param, IO_CACHE *from_file,
         {
           memcpy(unique_buff, buffpek->current_key(), rec_length);
           if (min_dupl_count)
-            memcpy(&dupl_count, unique_buff+dupl_count_ofs,
+            memcpy(&dupl_count,
+                   unique_buff + rec_length - sizeof(element_count),
                    sizeof(dupl_count));
         }
         if (!--max_rows)
@@ -1978,12 +1983,19 @@ bool merge_buffers(Sort_param *param, IO_CACHE *from_file,
   if (cmp)
   {
     uchar *current_key= buffpek->current_key();
+    param->get_rec_and_res_len(buffpek->current_key(),
+                               &rec_length, &res_length);
+    const uint bytes_to_write= (flag == 0) ? rec_length : res_length;
+
+
     if (!(*cmp)(first_cmp_arg, &unique_buff, &current_key))
     {
       if (min_dupl_count)
       {
         element_count cnt;
-        memcpy(&cnt, buffpek->current_key() + dupl_count_ofs, sizeof(cnt));
+        memcpy(&cnt,
+               buffpek->current_key() + rec_length - sizeof(element_count),
+               sizeof(cnt));
         dupl_count+= cnt;
       }
       buffpek->advance_current_key(rec_length);
@@ -1991,13 +2003,17 @@ bool merge_buffers(Sort_param *param, IO_CACHE *from_file,
     }
 
     if (min_dupl_count)
-      memcpy(unique_buff+dupl_count_ofs, &dupl_count,
+      memcpy(unique_buff + rec_length - sizeof(element_count), &dupl_count,
              sizeof(dupl_count));
 
     if (!check_dupl_count || dupl_count >= min_dupl_count)
     {
       src= unique_buff;
-      if (my_b_write(to_file, src+wr_offset, wr_len))
+      if (my_b_write(to_file,
+                        src + (offset_for_packing ?
+                               rec_length - res_length :  // sort length
+                               wr_offset),
+                        bytes_to_write))
         goto err;                             /* purecov: inspected */
       if (!--max_rows)
         goto end;                             

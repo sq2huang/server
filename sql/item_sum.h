@@ -1991,6 +1991,7 @@ public:
     { context= (Name_resolution_context *)cntx; return FALSE; }
   Item *get_copy(THD *thd)
   { return get_item_copy<Item_func_group_concat>(thd, this); }
+  bool is_distinct_packed();
 };
 
 #endif /* ITEM_SUM_INCLUDED */

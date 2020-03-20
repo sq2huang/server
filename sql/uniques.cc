@@ -106,7 +106,7 @@ Unique::Unique(qsort_cmp2 comp_func, void * comp_func_fixed_arg,
   if (packed)
   {
     packed_rec_ptr= (uchar *)my_malloc(PSI_INSTRUMENT_ME,
-                                       size + size_of_length_field,
+                                       full_size,
                                        MYF(MY_WME | MY_THREAD_SPECIFIC));
   }
   /*
