@@ -691,11 +691,11 @@ id	select_type	table	type	possible_keys	key	key_len	ref	rows	Extra
 EXPLAIN
 SELECT * FROM City WHERE Country='USA';
 id	select_type	table	type	possible_keys	key	key_len	ref	rows	Extra
-1	SIMPLE	City	ref	Country,CountryPopulation	Country	3	const	267	Using index condition
+1	SIMPLE	City	ref	Country,CountryPopulation	CountryPopulation	3	const	270	Using index condition
 EXPLAIN
 SELECT * FROM City WHERE Country='FIN';
 id	select_type	table	type	possible_keys	key	key_len	ref	rows	Extra
-1	SIMPLE	City	ref	Country,CountryPopulation	Country	3	const	7	Using index condition
+1	SIMPLE	City	ref	Country,CountryPopulation	CountryPopulation	3	const	7	Using index condition
 EXPLAIN
 SELECT * FROM City 
 WHERE ((Population > 101000 AND Population < 103000) OR Name LIKE 'Pas%')
@@ -752,7 +752,7 @@ CREATE INDEX CountryName ON City(Country,Name);
 EXPLAIN
 SELECT * FROM City WHERE Country='USA';
 id	select_type	table	type	possible_keys	key	key_len	ref	rows	Extra
-1	SIMPLE	City	ref	Country,CountryPopulation,CountryName	Country	3	const	267	Using index condition
+1	SIMPLE	City	ref	Country,CountryPopulation,CountryName	CountryPopulation	3	const	270	Using index condition
 EXPLAIN
 SELECT * FROM City WHERE Country='FIN';
 id	select_type	table	type	possible_keys	key	key_len	ref	rows	Extra

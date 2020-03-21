@@ -7196,7 +7196,7 @@ double matching_candidates_in_table(JOIN_TAB *s, bool with_found_constraint,
   {
     TABLE *table= s->table;
     double sel= table->cond_selectivity;
-    double table_records= (double)table->stat_records();
+    double table_records= (double) s->records;
     dbl_records= table_records * sel;
     return dbl_records;
   }
@@ -7451,7 +7451,12 @@ best_access_path(JOIN      *join,
             type= JT_EQ_REF;
             trace_access_idx.add("access_type", join_type_str[type])
                             .add("index", keyinfo->name);
-            tmp = prev_record_reads(join_positions, idx, found_ref);
+            if (!found_ref && table->quick_keys.is_set(key))
+              tmp= ((double) table->quick_costs[key] -
+                    MULTI_RANGE_READ_SETUP_COST);
+            else
+              tmp= table->file->avg_io_cost();
+            tmp*= prev_record_reads(join_positions, idx, found_ref);
             records=1.0;
           }
           else
@@ -7482,6 +7487,13 @@ best_access_path(JOIN      *join,
               {
                 records= (double) table->quick_rows[key];
                 trace_access_idx.add("used_range_estimates", true);
+                /*
+                  Use calculated cost, but ensure we prefer ref before
+                  range
+                */
+                tmp= ((double) table->quick_costs[key] -
+                      MULTI_RANGE_READ_SETUP_COST);
+                goto got_cost;
               }
               else
               {
@@ -7547,6 +7559,7 @@ best_access_path(JOIN      *join,
             else
               tmp= table->file->read_time(key, 1,
                                           (ha_rows) MY_MIN(tmp,s->worst_seeks));
+        got_cost:
             tmp= COST_MULT(tmp, record_count);
           }
         }

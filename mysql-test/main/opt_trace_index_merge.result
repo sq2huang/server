@@ -111,12 +111,12 @@ explain select * from t1 where a=1 or b=1	{
                                 "using_mrr": false,
                                 "index_only": true,
                                 "rows": 1,
-                                "cost": 0.3273,
+                                "cost": 0.3473,
                                 "chosen": true
                               }
                             ],
                             "index_to_merge": "a",
-                            "cumulated_cost": 0.3273
+                            "cumulated_cost": 0.3473
                           },
                           {
                             "range_scan_alternatives": [
@@ -127,15 +127,15 @@ explain select * from t1 where a=1 or b=1	{
                                 "using_mrr": false,
                                 "index_only": true,
                                 "rows": 1,
-                                "cost": 0.3273,
+                                "cost": 0.3473,
                                 "chosen": true
                               }
                             ],
                             "index_to_merge": "b",
-                            "cumulated_cost": 0.6547
+                            "cumulated_cost": 0.6947
                           }
                         ],
-                        "cost_of_reading_ranges": 0.6547,
+                        "cost_of_reading_ranges": 0.6947,
                         "use_roworder_union": true,
                         "cause": "always cheaper than non roworder retrieval",
                         "analyzing_roworder_scans": [
@@ -158,7 +158,7 @@ explain select * from t1 where a=1 or b=1	{
                             }
                           }
                         ],
-                        "index_roworder_union_cost": 2.4484,
+                        "index_roworder_union_cost": 2.4884,
                         "members": 2,
                         "chosen": true
                       }
@@ -187,7 +187,7 @@ explain select * from t1 where a=1 or b=1	{
                       ]
                     },
                     "rows_for_plan": 2,
-                    "cost_for_plan": 2.4484,
+                    "cost_for_plan": 2.4884,
                     "chosen": true
                   }
                 }
@@ -209,20 +209,20 @@ explain select * from t1 where a=1 or b=1	{
                     {
                       "access_type": "index_merge",
                       "resulting_rows": 2,
-                      "cost": 2.4484,
+                      "cost": 2.4884,
                       "chosen": true
                     }
                   ],
                   "chosen_access_method": {
                     "type": "index_merge",
                     "records": 2,
-                    "cost": 2.4484,
+                    "cost": 2.4884,
                     "uses_join_buffering": false,
                     "filter_used": false
                   }
                 },
                 "rows_for_plan": 2,
-                "cost_for_plan": 2.8484,
+                "cost_for_plan": 2.8884,
                 "estimated_join_cardinality": 2
               }
             ]
@@ -501,7 +501,7 @@ JSON_DETAILED(JSON_EXTRACT(trace, '$**.analyzing_range_alternatives'))
                                 "using_mrr": false,
                                 "index_only": true,
                                 "rows": 2243,
-                                "cost": 486.98,
+                                "cost": 487,
                                 "chosen": true
                             },
                             
@@ -515,13 +515,13 @@ JSON_DETAILED(JSON_EXTRACT(trace, '$**.analyzing_range_alternatives'))
                                 "using_mrr": false,
                                 "index_only": true,
                                 "rows": 2243,
-                                "cost": 486.98,
+                                "cost": 487,
                                 "chosen": false,
                                 "cause": "cost"
                             }
                         ],
                         "index_to_merge": "key1",
-                        "cumulated_cost": 486.98
+                        "cumulated_cost": 487
                     },
                     
                     {
@@ -538,7 +538,7 @@ JSON_DETAILED(JSON_EXTRACT(trace, '$**.analyzing_range_alternatives'))
                                 "using_mrr": false,
                                 "index_only": true,
                                 "rows": 2243,
-                                "cost": 486.98,
+                                "cost": 487,
                                 "chosen": true
                             },
                             
@@ -552,16 +552,16 @@ JSON_DETAILED(JSON_EXTRACT(trace, '$**.analyzing_range_alternatives'))
                                 "using_mrr": false,
                                 "index_only": true,
                                 "rows": 2243,
-                                "cost": 486.98,
+                                "cost": 487,
                                 "chosen": false,
                                 "cause": "cost"
                             }
                         ],
                         "index_to_merge": "key3",
-                        "cumulated_cost": 973.95
+                        "cumulated_cost": 973.99
                     }
                 ],
-                "cost_of_reading_ranges": 973.95,
+                "cost_of_reading_ranges": 973.99,
                 "use_roworder_union": true,
                 "cause": "always cheaper than non roworder retrieval",
                 "analyzing_roworder_scans": 

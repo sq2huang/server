@@ -13,7 +13,7 @@ set optimizer_switch='extended_keys=off';
 explain
 select count(*) from lineitem where l_orderkey=130 and l_shipdate='1992-07-01';
 id	select_type	table	type	possible_keys	key	key_len	ref	rows	Extra
-1	SIMPLE	lineitem	ref|filter	PRIMARY,i_l_shipdate,i_l_orderkey,i_l_orderkey_quantity	i_l_orderkey|i_l_shipdate	4|4	const	5 (0%)	Using where; Using rowid filter
+1	SIMPLE	lineitem	ref|filter	PRIMARY,i_l_shipdate,i_l_orderkey,i_l_orderkey_quantity	i_l_orderkey_quantity|i_l_shipdate	4|4	const	5 (0%)	Using where; Using rowid filter
 flush status;
 select count(*) from lineitem where l_orderkey=130 and l_shipdate='1992-07-01';
 count(*)
@@ -274,7 +274,7 @@ explain
 select max(l_linenumber) from lineitem 
 where l_shipdate='1992-07-01' and l_orderkey=130;
 id	select_type	table	type	possible_keys	key	key_len	ref	rows	Extra
-1	SIMPLE	lineitem	ref|filter	PRIMARY,i_l_shipdate,i_l_orderkey,i_l_orderkey_quantity	i_l_orderkey|i_l_shipdate	4|4	const	5 (0%)	Using where; Using rowid filter
+1	SIMPLE	lineitem	ref|filter	PRIMARY,i_l_shipdate,i_l_orderkey,i_l_orderkey_quantity	i_l_orderkey_quantity|i_l_shipdate	4|4	const	5 (0%)	Using where; Using rowid filter
 flush status;
 select max(l_linenumber) from lineitem 
 where l_shipdate='1992-07-01' and l_orderkey=130;

@@ -323,7 +323,8 @@ handler::multi_range_read_info_const(uint keyno, RANGE_SEQ_IF *seq,
       uint limited_ranges= (uint) MY_MIN((ulonglong) n_ranges, io_blocks);
       cost->cpu_cost= read_time(keyno, limited_ranges, total_rows);
     }
-    cost->cpu_cost+= (double) total_rows / TIME_FOR_COMPARE;
+    cost->cpu_cost+= ((double) total_rows / TIME_FOR_COMPARE +
+                      MULTI_RANGE_READ_SETUP_COST);
   }
   DBUG_PRINT("statistics",
              ("key: %s  rows: %llu  total_cost: %.3f  io_blocks: %llu  "

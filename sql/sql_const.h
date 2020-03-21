@@ -209,6 +209,7 @@
 
 #define IDX_BLOCK_COPY_COST  ((double) 1 / TIME_FOR_COMPARE)
 #define IDX_LOOKUP_COST      ((double) 1 / 8)
+#define MULTI_RANGE_READ_SETUP_COST (IDX_BLOCK_COPY_COST/10)
 
 /**
   Number of comparisons of table rowids equivalent to reading one row from a 
