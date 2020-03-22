@@ -3689,22 +3689,24 @@ int dump_leaf_key(void* key_arg, element_count count __attribute__((unused)),
   ulonglong *offset_limit= &item->copy_offset_limit;
   ulonglong *row_limit = &item->copy_row_limit;
   if (item->limit_clause && !(*row_limit))
-    return 1;
-
-  if (!item->m_result_finalized)
+  {
     item->m_result_finalized= true;
-  else
-    result->append(*item->separator);
+    return 1;
+  }
 
   tmp.length(0);
 
   if (item->limit_clause && (*offset_limit))
   {
     item->row_count++;
-    //item->no_appended= TRUE;
     (*offset_limit)--;
     return 0;
   }
+
+  if (!item->m_result_finalized)
+    item->m_result_finalized= true;
+  else
+    result->append(*item->separator);
 
   for (; arg < arg_end; arg++)
   {
@@ -4414,6 +4416,8 @@ String* Item_func_group_concat::val_str(String* str)
       tree_walk(tree, &dump_leaf_key, this, left_root_right);
     else if (distinct) // distinct (and no order by).
       unique_filter->walk(table, &dump_leaf_key, this);
+    else if (row_limit && copy_row_limit == row_limit->val_int())
+      return &result;
     else
       DBUG_ASSERT(false); // Can't happen
   }
