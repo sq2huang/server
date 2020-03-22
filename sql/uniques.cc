@@ -84,10 +84,11 @@ Unique::Unique(qsort_cmp2 comp_func, void * comp_func_fixed_arg,
                uint min_dupl_count_arg, bool packed_arg)
   :max_in_memory_size(max_in_memory_size_arg),
    size(size_arg),
-   elements(0),
    packed(packed_arg),
    memory_used(0), packed_rec_ptr(NULL),
-   sortorder(NULL), sort_keys(NULL)
+   sortorder(NULL), sort_keys(NULL),
+   elements(0)
+
 {
   my_b_clear(&file);
   min_dupl_count= min_dupl_count_arg;

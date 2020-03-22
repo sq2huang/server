@@ -3677,7 +3677,7 @@ int dump_leaf_key(void* key_arg, element_count count __attribute__((unused)),
   uint old_length= result->length();
   SORT_FIELD *pos;
 
-  bool packed= item->distinct && item->unique_filter->is_packed();
+  bool packed= item->is_distinct_packed();
 
   if (packed)
   {
@@ -4075,7 +4075,8 @@ bool Item_func_group_concat::add(bool exclude_nulls)
   String *res;
   uint32 packed_length=0;
   uchar *to= NULL, *orig_to= table->record[0] + table->s->null_bytes;
-  if (distinct && unique_filter->is_packed())
+
+  if (is_distinct_packed())
   {
     orig_to= to= unique_filter->get_packed_rec_ptr();
     to+= Unique::size_of_length_field;
@@ -4109,12 +4110,12 @@ bool Item_func_group_concat::add(bool exclude_nulls)
 
   if (distinct) 
   {
-    /* Filter out duplicate rows. */
     if (unique_filter->is_packed())
     {
       packed_length= static_cast<uint32>(to - orig_to);
       Unique::store_packed_length(orig_to, packed_length);
     }
+    /* Filter out duplicate rows. */
     uint count= unique_filter->elements_in_tree();
     unique_filter->unique_add(orig_to, packed_length);
     if (count == unique_filter->elements_in_tree())
@@ -4416,7 +4417,7 @@ String* Item_func_group_concat::val_str(String* str)
       tree_walk(tree, &dump_leaf_key, this, left_root_right);
     else if (distinct) // distinct (and no order by).
       unique_filter->walk(table, &dump_leaf_key, this);
-    else if (row_limit && copy_row_limit == row_limit->val_int())
+    else if (row_limit && copy_row_limit == (ulonglong)row_limit->val_int())
       return &result;
     else
       DBUG_ASSERT(false); // Can't happen
