@@ -50,7 +50,7 @@ FOREACH(inifile my-huge my-innodb-heavy-4G my-large my-medium my-small)
 ENDFOREACH()
 ENDIF()
 
-IF(WITH_WSREP)
+IF(WITH_WSREP AND NOT WITHOUT_SERVER)
   CONFIGURE_FILE(${CMAKE_CURRENT_SOURCE_DIR}/wsrep.cnf.sh
                  ${CMAKE_CURRENT_BINARY_DIR}/wsrep.${ini_file_extension} @ONLY)
   INSTALL(FILES ${CMAKE_CURRENT_BINARY_DIR}/wsrep.${ini_file_extension}
@@ -60,10 +60,13 @@ ENDIF()
 IF(UNIX)
   SET(prefix ${CMAKE_INSTALL_PREFIX})
   FOREACH(script mysqld_multi.server mysql-log-rotate binary-configure wsrep_notify)
-    CONFIGURE_FILE(${CMAKE_CURRENT_SOURCE_DIR}/${script}.sh 
-                   ${CMAKE_CURRENT_BINARY_DIR}/${script} @ONLY )
-    INSTALL(PROGRAMS ${CMAKE_CURRENT_BINARY_DIR}/${script}
-      DESTINATION ${inst_location} COMPONENT Server_Scripts)
+    IF(WITHOUT_SERVER AND (script STREQUAL "wsrep_notify"))
+    ELSE()
+      CONFIGURE_FILE(${CMAKE_CURRENT_SOURCE_DIR}/${script}.sh
+                     ${CMAKE_CURRENT_BINARY_DIR}/${script} @ONLY )
+      INSTALL(PROGRAMS ${CMAKE_CURRENT_BINARY_DIR}/${script}
+        DESTINATION ${inst_location} COMPONENT Server_Scripts)
+    ENDIF()
   ENDFOREACH()
 
   IF(INSTALL_SUPPORTFILESDIR)
