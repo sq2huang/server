@@ -390,8 +390,11 @@ SET (MYSQLD_STATIC_PLUGIN_LIBS "" CACHE INTERNAL "")
 INCLUDE(submodules)
 INCLUDE(mariadb_connector_c) # this does ADD_SUBDIRECTORY(libmariadb)
 
-# Add storage engines and plugins.
-CONFIGURE_PLUGINS()
+IF (NOT WITHOUT_SERVER)
+  # Add storage engines and plugins.
+  CONFIGURE_PLUGINS()
+ENDIF()
+
 
 ADD_SUBDIRECTORY(include)
 ADD_SUBDIRECTORY(dbug)
