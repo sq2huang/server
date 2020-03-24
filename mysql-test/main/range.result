@@ -281,7 +281,7 @@ INSERT INTO t1 VALUES
 (33,5),(33,5),(33,5),(33,5),(34,5),(35,5);
 EXPLAIN SELECT * FROM t1 WHERE a IN(1,2) AND b=5;
 id	select_type	table	type	possible_keys	key	key_len	ref	rows	Extra
-1	SIMPLE	t1	range|filter	a,b	a|b	5|5	NULL	2 (41%)	Using index condition; Using where; Using rowid filter
+1	SIMPLE	t1	ref|filter	a,b	b|a	5|5	const	15 (5%)	Using where; Using rowid filter
 SELECT * FROM t1 WHERE a IN(1,2) AND b=5;
 a	b
 DROP TABLE t1;
@@ -327,8 +327,8 @@ KEY recount( owner, line )
 INSERT into t1 (owner,id,columnid,line) values (11,15,15,1),(11,13,13,5);
 SELECT id, columnid, tableid, content, showid, line, ordinal FROM t1 WHERE owner=11 AND ((columnid IN ( 15, 13, 14 ) AND line IN ( 1, 2, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 31 )) OR (columnid IN ( 13, 14 ) AND line IN ( 15 ))) LIMIT 0 , 30;
 id	columnid	tableid	content	showid	line	ordinal
-13	13	1	188	1	5	0
 15	15	1	188	1	1	0
+13	13	1	188	1	5	0
 drop table t1;
 create  table t1 (id int(10) primary key);
 insert into t1 values (1),(2),(3),(4),(5),(6),(7),(8),(9);

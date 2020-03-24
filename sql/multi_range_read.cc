@@ -112,7 +112,7 @@ handler::multi_range_read_info_const(uint keyno, RANGE_SEQ_IF *seq,
   if (table->file->is_clustering_key(keyno))
     len= table->s->stored_rec_length;
   /* Assume block is 75 % full */
-  uint avg_block_records= ((uint) (table->file->stats.block_size*3/4))/len + 1;
+  uint avg_block_records= ((uint) (stats.block_size*3/4))/len + 1;
   uint limit= thd->variables.eq_range_index_dive_limit;
   bool use_statistics_for_eq_range= eq_ranges_exceeds_limit(seq,
                                                             seq_init_param,
@@ -218,7 +218,7 @@ handler::multi_range_read_info_const(uint keyno, RANGE_SEQ_IF *seq,
             */
             prev_range_last_block_records+= rows;
             DBUG_ASSERT(prev_range_last_block_records <
-                        table->file->stats.block_size);
+                        stats.block_size);
           }
           else
 	  {

@@ -825,7 +825,7 @@ WHERE ((Population > 101000 AND Population < 110000) OR
 ID BETWEEN 3500 AND 3800) AND Country='FIN'
         AND (Name BETWEEN 'P' AND 'T' OR ID BETWEEN 4000 AND 4300);
 id	select_type	table	type	possible_keys	key	key_len	ref	rows	Extra
-1	SIMPLE	City	ref	PRIMARY,Population,Country,Name,CountryPopulation,CountryName	CountryPopulation	3	const	7	Using index condition; Using where
+1	SIMPLE	City	ref	PRIMARY,Population,Country,Name,CountryPopulation,CountryName	Country	3	const	7	Using index condition; Using where
 SELECT * FROM City USE INDEX ()
 WHERE ((Population > 101000 AND Population < 102000) OR
 ID BETWEEN 3790 AND 3800) AND Country='USA'

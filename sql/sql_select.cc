@@ -232,7 +232,7 @@ static bool test_if_cheaper_ordering(const JOIN_TAB *tab,
                                      uint *saved_best_key_parts= NULL);
 static int test_if_order_by_key(JOIN *join,
                                 ORDER *order, TABLE *table, uint idx,
-				uint *used_key_parts= NULL);
+				uint *used_key_parts);
 static bool test_if_skip_sort_order(JOIN_TAB *tab,ORDER *order,
 				    ha_rows select_limit, bool no_changes,
                                     const key_map *map);
@@ -7196,7 +7196,7 @@ double matching_candidates_in_table(JOIN_TAB *s, bool with_found_constraint,
   {
     TABLE *table= s->table;
     double sel= table->cond_selectivity;
-    double table_records= (double) s->records;
+    double table_records= rows2double(s->records);
     dbl_records= table_records * sel;
     return dbl_records;
   }
@@ -7224,6 +7224,61 @@ double matching_candidates_in_table(JOIN_TAB *s, bool with_found_constraint,
 
   dbl_records= (double)records;
   return dbl_records;
+}
+
+
+/*
+  Calculate the cost of reading a set of rows trough an index
+
+  Logically this is identical to the code in multi_range_read_info_const()
+  excepts the function also takes into account io_blocks and multiple
+  ranges.
+
+  One main difference between the functions is that
+  multi_range_read_info_const() adds a very small cost per range
+  (IDX_LOOKUP_COST) and also MULTI_RANGE_READ_SETUP_COST, to ensure that
+  'ref' is preferred slightly over ranges.
+*/
+
+double cost_for_index_read(const THD *thd, const TABLE *table, uint key,
+                           ha_rows records, ha_rows worst_seeks)
+{
+  DBUG_ENTER("cost_for_index_read");
+  double cost;
+  handler *file= table->file;
+
+  set_if_smaller(records, (ha_rows) thd->variables.max_seeks_for_key);
+  if (file->is_clustering_key(key))
+    cost= file->read_time(key, 1, records);
+  else
+    if (table->covering_keys.is_set(key))
+    cost= file->keyread_time(key, 1, records);
+  else
+    cost= ((file->keyread_time(key, 0, records) +
+            file->read_time(key, 1, MY_MIN(records, worst_seeks))));
+
+  DBUG_PRINT("statistics", ("cost: %.3f", cost));
+  DBUG_RETURN(cost);
+}
+
+
+/*
+  Adjust cost from table->quick_costs calculated by
+  multi_range_read_info_const() to be comparable with cost_for_index_read()
+
+  This functions is needed because best_access_patch doesn't add
+  TIME_FOR_COMPARE to it's costs until very late.
+  Preferably we should fix so that all costs are comparably.
+  (All compared costs should include TIME_FOR_COMPARE for all found
+  rows).
+*/
+
+double adjust_quick_cost(double quick_cost, double records)
+{
+  double cost= (quick_cost - MULTI_RANGE_READ_SETUP_COST -
+                records/TIME_FOR_COMPARE);
+  DBUG_ASSERT(cost > 0.0);
+  return cost;
 }
 
 
@@ -7448,12 +7503,13 @@ best_access_path(JOIN      *join,
               (!(key_flags & HA_NULL_PART_KEY) ||            //  (2)
                all_key_parts == notnull_part))               //  (3)
           {
+
+            /* TODO: Adjust cost for covering and clustering key */
             type= JT_EQ_REF;
             trace_access_idx.add("access_type", join_type_str[type])
                             .add("index", keyinfo->name);
             if (!found_ref && table->quick_keys.is_set(key))
-              tmp= ((double) table->quick_costs[key] -
-                    MULTI_RANGE_READ_SETUP_COST);
+              tmp= adjust_quick_cost(table->quick_costs[key], 1);
             else
               tmp= table->file->avg_io_cost();
             tmp*= prev_record_reads(join_positions, idx, found_ref);
@@ -7487,12 +7543,7 @@ best_access_path(JOIN      *join,
               {
                 records= (double) table->quick_rows[key];
                 trace_access_idx.add("used_range_estimates", true);
-                /*
-                  Use calculated cost, but ensure we prefer ref before
-                  range
-                */
-                tmp= ((double) table->quick_costs[key] -
-                      MULTI_RANGE_READ_SETUP_COST);
+                tmp= adjust_quick_cost(table->quick_costs[key], records);
                 goto got_cost;
               }
               else
@@ -7527,12 +7578,11 @@ best_access_path(JOIN      *join,
               */
               if (table->quick_keys.is_set(key) &&
                   (const_part &
-                    (((key_part_map)1 << table->quick_key_parts[key])-1)) ==
+                  (((key_part_map)1 << table->quick_key_parts[key])-1)) ==
                   (((key_part_map)1 << table->quick_key_parts[key])-1) &&
                   table->quick_n_ranges[key] == 1 &&
                   records > (double) table->quick_rows[key])
               {
-
                 records= (double) table->quick_rows[key];
                 trace_access_idx.add("used_range_estimates", true);
               }
@@ -7552,13 +7602,8 @@ best_access_path(JOIN      *join,
               }
             }
             /* Limit the number of matched rows */
-            tmp= records;
-            set_if_smaller(tmp, (double) thd->variables.max_seeks_for_key);
-            if (table->covering_keys.is_set(key))
-              tmp= table->file->keyread_time(key, 1, (ha_rows) tmp);
-            else
-              tmp= table->file->read_time(key, 1,
-                                          (ha_rows) MY_MIN(tmp,s->worst_seeks));
+            tmp= cost_for_index_read(thd, table, key, (ha_rows) records,
+                                     (ha_rows) s->worst_seeks);
         got_cost:
             tmp= COST_MULT(tmp, record_count);
           }
@@ -7621,8 +7666,10 @@ best_access_path(JOIN      *join,
                 table->quick_key_parts[key] == max_key_part &&          //(C2)
                 table->quick_n_ranges[key] == 1 + MY_TEST(ref_or_null_part)) //(C3)
             {
-              tmp= records= (double) table->quick_rows[key];
+              records= (double) table->quick_rows[key];
+              tmp= adjust_quick_cost(table->quick_costs[key], records);
               trace_access_idx.add("used_range_estimates", true);
+              goto got_cost2;
             }
             else
             {
@@ -7645,24 +7692,23 @@ best_access_path(JOIN      *join,
                   cheaper in some cases ?
                   TODO: figure this out and adjust the plan choice if needed.
                 */
-                if (!found_ref && table->quick_keys.is_set(key) &&    // (1)
-                    table->quick_key_parts[key] > max_key_part &&     // (2)
-                    records < (double)table->quick_rows[key])         // (3)
+                if (table->quick_keys.is_set(key))
                 {
-                  trace_access_idx.add("used_range_estimates", true);
-                  records= (double)table->quick_rows[key];
-                }
-                else
-                {
-                  if (table->quick_keys.is_set(key) &&
-                      table->quick_key_parts[key] < max_key_part)
+                  if (table->quick_key_parts[key] >= max_key_part)     // (2)
                   {
-                    trace_access_idx.add("chosen", false);
-                    cause= "range uses more keyparts";
+                    if (!found_ref &&                                  // (1)
+                        records < (double) table->quick_rows[key])     // (3)
+                    {
+                      trace_access_idx.add("used_range_estimates", true);
+                      records= (double) table->quick_rows[key];
+                    }
+                  }
+                  else /* (table->quick_key_parts[key] < max_key_part) */
+                  {
+                    trace_access_idx.add("chosen", true);
+                    cause= "range uses less keyparts";
                   }
                 }
-
-                tmp= records;
               }
               else
               {
@@ -7686,27 +7732,25 @@ best_access_path(JOIN      *join,
                   rec_per_key=(double) s->records/rec+1;
 
                 if (!s->records)
-                  tmp = 0;
+                  records= 0;
                 else if (rec_per_key/(double) s->records >= 0.01)
-                  tmp = rec_per_key;
+                  records= rec_per_key;
                 else
                 {
                   double a=s->records*0.01;
                   if (keyinfo->user_defined_key_parts > 1)
-                    tmp= (max_key_part * (rec_per_key - a) +
+                    records= (max_key_part * (rec_per_key - a) +
                           a*keyinfo->user_defined_key_parts - rec_per_key)/
                          (keyinfo->user_defined_key_parts-1);
                   else
-                    tmp= a;
-                  set_if_bigger(tmp,1.0);
+                    records= a;
+                  set_if_bigger(records, 1.0);
                 }
-                records = (ulong) tmp;
               }
 
               if (ref_or_null_part)
               {
-                /* We need to do two key searches to find key */
-                tmp *= 2.0;
+                /* We need to do two key searches to find row */
                 records *= 2.0;
               }
 
@@ -7725,22 +7769,21 @@ best_access_path(JOIN      *join,
               if (table->quick_keys.is_set(key) &&
                   table->quick_key_parts[key] <= max_key_part &&
                   const_part &
-                    ((key_part_map)1 << table->quick_key_parts[key]) &&
+                  ((key_part_map)1 << table->quick_key_parts[key]) &&
                   table->quick_n_ranges[key] == 1 + MY_TEST(ref_or_null_part &
                                                             const_part) &&
                   records > (double) table->quick_rows[key])
               {
-                tmp= records= (double) table->quick_rows[key];
+                records= (double) table->quick_rows[key];
               }
             }
 
             /* Limit the number of matched rows */
+            tmp= records;
             set_if_smaller(tmp, (double) thd->variables.max_seeks_for_key);
-            if (table->covering_keys.is_set(key))
-              tmp= table->file->keyread_time(key, 1, (ha_rows) tmp);
-            else
-              tmp= table->file->read_time(key, 1,
-                                          (ha_rows) MY_MIN(tmp,s->worst_seeks));
+            tmp= cost_for_index_read(thd, table, key, (ha_rows) tmp,
+                                     (ha_rows) s->worst_seeks);
+        got_cost2:
             tmp= COST_MULT(tmp, record_count);
           }
           else
@@ -18619,6 +18662,7 @@ bool Create_tmp_table::finalize(THD *thd,
     delete table->file;
     goto err;
   }
+  table->file->set_table(table);
 
   if (!m_using_unique_constraint)
     share->reclength+= m_group_null_items; // null flag is stored separately
@@ -18643,6 +18687,7 @@ bool Create_tmp_table::finalize(THD *thd,
   share->reclength+= whole_null_pack_length;
   if (!share->reclength)
     share->reclength= 1;                // Dummy select
+  share->stored_rec_length= share->reclength;
   /* Use packed rows if there is blobs or a lot of space to gain */
   if (share->blob_fields ||
       (string_total_length() >= STRING_TOTAL_LENGTH_TO_PACK_ROWS &&
@@ -22877,8 +22922,7 @@ static int test_if_order_by_key(JOIN *join,
   }
 
 ok:
-  if (used_key_parts != NULL)
-    *used_key_parts= key_parts;
+  *used_key_parts= key_parts;
   DBUG_RETURN(reverse);
 }
 
@@ -22972,12 +23016,13 @@ test_if_subkey(ORDER *order, TABLE *table, uint ref, uint ref_key_parts,
   */
   for (nr= 0 ; nr < table->s->keys ; nr++)
   {
+    uint not_used;
     if (usable_keys->is_set(nr) &&
 	table->key_info[nr].key_length < min_length &&
 	table->key_info[nr].user_defined_key_parts >= ref_key_parts &&
 	is_subkey(table->key_info[nr].key_part, ref_key_part,
 		  ref_key_part_end) &&
-	test_if_order_by_key(NULL, order, table, nr))
+	test_if_order_by_key(NULL, order, table, nr, &not_used))
     {
       min_length= table->key_info[nr].key_length;
       best= nr;
@@ -28048,14 +28093,9 @@ static bool get_range_limit_read_cost(const JOIN_TAB *tab,
 
         if (ref_rows > 0)
         {
-          double tmp= (double)ref_rows;
-          /* Reuse the cost formula from best_access_path: */
-          set_if_smaller(tmp, (double) tab->join->thd->variables.max_seeks_for_key);
-          if (table->covering_keys.is_set(keynr))
-            tmp= table->file->keyread_time(keynr, 1, (ha_rows) tmp);
-          else
-            tmp= table->file->read_time(keynr, 1,
-                                        (ha_rows) MY_MIN(tmp,tab->worst_seeks));
+          double tmp= cost_for_index_read(tab->join->thd, table, keynr,
+                                          ref_rows,
+                                          (ha_rows) tab->worst_seeks);
           if (tmp < best_cost)
           {
             best_cost= tmp;

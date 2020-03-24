@@ -2819,7 +2819,7 @@ double handler::keyread_time(uint index, uint ranges, ha_rows rows)
   if (ranges)
   {
     uint keys_per_block= (uint) (stats.block_size*3/4/len+1);
-    ulonglong blocks= !rows ? 0 : (rows-1) / keys_per_block + 1;
+    ulonglong blocks= (rows+ keys_per_block- 1)/keys_per_block;
     cost+= blocks;
   }
   return cost;
@@ -2972,6 +2972,8 @@ int handler::ha_close(void)
 
   /* Detach from ANALYZE tracker */
   tracker= NULL;
+  /* We use ref as way to check that open succeded */
+  ref= 0;
   
   DBUG_ASSERT(m_lock_type == F_UNLCK);
   DBUG_ASSERT(inited == NONE);

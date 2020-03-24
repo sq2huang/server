@@ -701,7 +701,7 @@ ID	Name	Country	Population
 3808	Austin	USA	656562
 3809	Baltimore	USA	651154
 3810	Memphis	USA	650100
-SET SESSION sort_buffer_size = 2048;
+SET SESSION sort_buffer_size = IF(@@version_compile_machine like '%64%', 2048, 1536);
 EXPLAIN
 SELECT * FROM City WHERE
 Name LIKE 'C%' AND Population > 1000000;

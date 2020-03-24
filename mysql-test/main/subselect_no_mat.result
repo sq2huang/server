@@ -3181,7 +3181,7 @@ INSERT INTO t2 VALUES (1),(2),(3);
 EXPLAIN SELECT a, a IN (SELECT a FROM t1) FROM t2;
 id	select_type	table	type	possible_keys	key	key_len	ref	rows	Extra
 1	PRIMARY	t2	ALL	NULL	NULL	NULL	NULL	3	
-2	SUBQUERY	t1	index_subquery	a	a	5	func	2	Using index; Full scan on NULL key
+2	SUBQUERY	t1	index_subquery	a	a	5	func	3	Using index; Full scan on NULL key
 SELECT a, a IN (SELECT a FROM t1) FROM t2;
 a	a IN (SELECT a FROM t1)
 1	1
